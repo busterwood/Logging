@@ -15,6 +15,7 @@ Files are written with data a sequence number, for example `logfile-20170731-01.
 --maxlines  max number to lines to write to each file, default to 10,000
 --inbuffer  number of lines to buffer between reader and writer threads, default is 100
 --outbuffer size of the output stream buffer, default is 4096
+--time      outputs the number of lines written per second to StdErr
 ```
 
 ## Performance
@@ -23,7 +24,6 @@ My basic tests show `FileLogger` can write just over 350,000 lines per second to
 
 ```
 cat test.txt | Logging\bin\Release\FileLogger.exe --time
-Logging: timing
 ....
 Logging: wrotes 363,708 lines per second
 ....
