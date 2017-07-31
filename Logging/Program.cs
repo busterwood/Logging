@@ -57,9 +57,13 @@ namespace BusterWood.Logging
         {
             var timeout = TimeSpan.FromMilliseconds(100);
             var maxLines = args.IntFlag("--maxlines", 10000);
+            bool time = args.Remove("--time");
+            if (time)
+                Console.Error.WriteLine($"Logging: timing");
 
             int lineCount = maxLines.Value + 1; // force file be opened first time through the loop
-
+            int perSec = 0;
+            DateTime windowStart = DateTime.UtcNow;
             FileStream stream = null;
             StreamWriter output = null;
             for (;;)
@@ -88,6 +92,16 @@ namespace BusterWood.Logging
                 {
                     output.WriteLine(line);
                     lineCount++;
+                    if (time)
+                    {
+                        perSec++;
+                        if (DateTime.UtcNow - windowStart >= TimeSpan.FromSeconds(1))
+                        {
+                            Console.Error.WriteLine($"Logging: wrotes {perSec:N0} lines per second");
+                            perSec = 0;
+                            windowStart = DateTime.UtcNow;
+                        }
+                    }
                 }
             }
         }
@@ -120,7 +134,7 @@ namespace BusterWood.Logging
                 else
                     fileNumber += 1;
 
-                var path = Path.Combine(folder, $"{prefix}-{now:yyyyMMdd}-{fileNumber}.log");
+                var path = Path.Combine(folder, $"{prefix}-{now:yyyyMMdd}-{fileNumber:00}.log");
 
                 if (!File.Exists(path))
                     return path;
