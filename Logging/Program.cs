@@ -9,12 +9,15 @@ namespace BusterWood.Logging
 {
     class Program
     {
-        static readonly BlockingCollection<string> buffer = new BlockingCollection<string>(100);
+        static BlockingCollection<string> buffer;
         static FileNameProvider fileName;
 
         static void Main(string[] argv)
         {
             var args = argv.ToList();
+
+            var inBuffer = args.IntFlag("--inbuffer");
+            buffer = new BlockingCollection<string>(inBuffer ?? 100);
 
             var prefix = args.StringFlag("--prefix", "logfile");
             var folder = args.StringFlag("--folder", ".");
@@ -42,7 +45,8 @@ namespace BusterWood.Logging
             {
                 try
                 {
-                    WriteToFile((List<string>)arg);
+                    var arg1 = (List<string>)arg;
+                    WriteToFile(arg1.ToList()); // send a copy as args are removed
                     return;
                 }
                 catch (Exception ex)
@@ -55,11 +59,10 @@ namespace BusterWood.Logging
 
         static void WriteToFile(List<string> args)
         {
+            var outBuffer = args.IntFlag("--outbuffer") ?? 4096;
             var timeout = TimeSpan.FromMilliseconds(100);
             var maxLines = args.IntFlag("--maxlines", 10000);
             bool time = args.Remove("--time");
-            if (time)
-                Console.Error.WriteLine($"Logging: timing");
 
             int lineCount = maxLines.Value + 1; // force file be opened first time through the loop
             int perSec = 0;
@@ -72,7 +75,7 @@ namespace BusterWood.Logging
                 {
                     output?.Close();
                     var path = fileName.Next();
-                    stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read); // 4K is the default buffer size
+                    stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, outBuffer); 
                     output = new StreamWriter(stream);
                     lineCount = 0;
                     Console.Error.WriteLine($"Logging: now writing to {path}");
