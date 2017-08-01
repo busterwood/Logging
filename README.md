@@ -20,13 +20,18 @@ Files are written with data a sequence number, for example `logfile-20170731-01.
 
 ## Performance
 
-My basic tests show `FileLogger` can write just over 350,000 lines per second to a local SSD, but you may like to test it with your own data.
+My basic tests show `FileLogger` can write just over 350,000 lines per second to a local SSD (around 40MB per second), but you may like to test it with your own data.
 
 ```
-cat test.txt | Logging\bin\Release\FileLogger.exe --time
-....
-Logging: wrotes 363,708 lines per second
-....
-Logging: wrotes 381,926 lines per second
-....
+C:\Dev\BusterWood.Logging>cat test.txt | Logging\bin\Release\FileLogger.exe --time --maxlines 100000
+Logging: now writing to .\logfile-20170801-01.log
+Logging: now writing to .\logfile-20170801-02.log
+Logging: now writing to .\logfile-20170801-03.log
+Logging: now writing to .\logfile-20170801-04.log
+Logging: wrotes 354,675 lines per second
+Logging: now writing to .\logfile-20170801-05.log
+Logging: now writing to .\logfile-20170801-06.log
+Logging: now writing to .\logfile-20170801-07.log
+Logging: now writing to .\logfile-20170801-08.log
+Logging: wrotes 388,605 lines per second
 ```
