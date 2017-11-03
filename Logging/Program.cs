@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -12,41 +13,105 @@ namespace BusterWood.Logging
         static BlockingCollection<string> buffer;
         static FileNameProvider fileName;
 
-        static void Main(string[] argv)
+        static int outBuffer;
+        static int? maxLines;
+        static bool time;
+        static bool tee;
+
+        static int Main(string[] argv)
         {
             var args = argv.ToList();
-
-            var inBuffer = args.IntFlag("--inbuffer");
-            buffer = new BlockingCollection<string>(inBuffer ?? 100);
-
+            var inBuffer = args.IntFlag("--inbuffer") ?? 100;
             var prefix = args.StringFlag("--prefix", "logfile");
             var folder = args.StringFlag("--folder", ".");
+            outBuffer = args.IntFlag("--outbuffer") ?? 4096;
+            maxLines = args.IntFlag("--maxlines", 10000);
+            tee = args.Remove("--tee");
+            time = args.Remove("--time");
+
             fileName = new FileNameProvider(prefix, folder);
+            buffer = new BlockingCollection<string>(inBuffer);
+
+            if (args.Count == 0)
+            {
+                Console.Error.WriteLine("FileLoggging: command [args] - you must pass the command to run and optional arguments");
+                return 1;
+            }
+
+            var exe = args[0];
+            args.RemoveAt(0);
+
+            Process p;
+            try
+            {
+                p = Process.Start(
+                    new ProcessStartInfo
+                    {
+                        RedirectStandardInput = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        FileName = exe,
+                        Arguments = string.Join(" ", args),
+                    }
+                );
+
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e.Message);
+                return 9999;
+            }
+
+            var stdInCopier = new Thread(CopyInput) { IsBackground = true };
+            stdInCopier.Start(p.StandardInput);
+
+            var stdOutCopier = new Thread(CopyOutput);
+            stdOutCopier.Start(p.StandardOutput);
 
             // write on a separate thread so we can flush the buffer is no lines are received for a while (currently 100ms)
-            var writingThread = new Thread(RunWriteToFile);
-            writingThread.Start(args);
+            var writeStdErrToFile = new Thread(CopyBufferToFile);
+            writeStdErrToFile.Start();
 
             for (;;)
             {
-                var line = Console.ReadLine();
+                var line = p.StandardError.ReadLine();
                 buffer.Add(line); // send the null down to terminate the writingThread
                 if (line == null)
                     break;
             }
 
+            p.WaitForExit();
+
             // make sure all buffered lines have been written before we exit
-            writingThread.Join();
+            writeStdErrToFile.Join();
+            stdOutCopier.Join();
+
+            if (Debugger.IsAttached)
+                Debugger.Break();
+            return p.ExitCode;
         }
 
-        static void RunWriteToFile(object arg)
+        static void CopyOutput(object state)
+        {
+            var @in = (StreamReader)state;
+            @in.BaseStream.CopyToAsync(Console.OpenStandardOutput(), 4096);
+        }
+
+        static void CopyInput(object state)
+        {
+            var @out = (StreamWriter)state;
+            Console.OpenStandardInput().CopyTo(@out.BaseStream, 4096);
+        }
+
+        static void CopyBufferToFile()
         {
             for(;;)
             {
                 try
                 {
-                    var arg1 = (List<string>)arg;
-                    WriteToFile(arg1.ToList()); // send a copy as args are removed
+                    WriteToFile(); 
                     return;
                 }
                 catch (Exception ex)
@@ -57,12 +122,9 @@ namespace BusterWood.Logging
             }
         }
 
-        static void WriteToFile(List<string> args)
+        static void WriteToFile()
         {
-            var outBuffer = args.IntFlag("--outbuffer") ?? 4096;
             var timeout = TimeSpan.FromMilliseconds(100);
-            var maxLines = args.IntFlag("--maxlines", 10000);
-            bool time = args.Remove("--time");
 
             int lineCount = maxLines.Value + 1; // force file be opened first time through the loop
             int perSec = 0;
@@ -94,13 +156,15 @@ namespace BusterWood.Logging
                 else
                 {
                     output.WriteLine(line);
+                    if (tee)
+                        Console.Error.WriteLine(line);
                     lineCount++;
                     if (time)
                     {
                         perSec++;
                         if (DateTime.UtcNow - windowStart >= TimeSpan.FromSeconds(1))
                         {
-                            Console.Error.WriteLine($"Logging: wrotes {perSec:N0} lines per second");
+                            Console.Error.WriteLine($"Logging: wrote {perSec:N0} lines per second");
                             perSec = 0;
                             windowStart = DateTime.UtcNow;
                         }
